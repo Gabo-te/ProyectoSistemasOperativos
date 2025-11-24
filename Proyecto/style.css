@@ -23,3 +23,8 @@ list row {
 label {
     font-size: 11pt;
 }
+
+.error-text {
+    color: #c62828;
+    font-weight: 600;
+}

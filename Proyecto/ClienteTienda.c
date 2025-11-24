@@ -2,6 +2,16 @@
  * ClienteTienda.c
  * Compilar:
  * gcc -std=gnu11 -Wall -Wextra -pedantic ClienteTienda.c -o cliente $(pkg-config --cflags --libs gtk+-3.0 gdk-pixbuf-2.0)
+ *
+ * Mejoras implementadas:
+ * - Protocolo optimizado (GET_MODELS ya incluye specs).
+ * - Eliminado botón "Ver Detalles".
+ * - Total parcial del carrito.
+ * - Diálogo de pago con formateo de tarjeta, CVV y fecha.
+ * - Folio OXXO + botón "Copiar".
+ * - Guardar ticket a CSV/TXT.
+ * - CSS básico (style.css).
+ */
 
 #include <gtk/gtk.h>
 #include <stdio.h>
@@ -25,12 +35,22 @@ static GtkWidget *g_ticket_list_box;
 static GtkWidget *g_ticket_date_label;
 static GtkWidget *g_ticket_total_label;
 static GtkWidget *g_ticket_save_button;
+static GtkWidget *g_login_username_entry;
+static GtkWidget *g_login_password_entry;
+static GtkWidget *g_login_error_label;
+static GtkWidget *g_welcome_label;
+static GtkWidget *g_cart_button;
+static GtkWidget *g_admin_button;
+static GtkWidget *g_admin_list_box;
+static GtkWidget *g_admin_status_label;
 
 /* Para folio OXXO */
 static GtkWidget *g_folio_row = NULL;
 
 /* Último ticket bruto para exportar */
 static char *g_last_ticket_raw = NULL;
+static char *g_current_user = NULL;
+static char *g_user_role = NULL;
 
 typedef struct {
     GtkWidget *filter_modelo;
@@ -55,6 +75,13 @@ static void on_checkout_submit(GtkDialog *dialog, gint response_id, gpointer use
 static void cleanup_and_exit(GtkWidget *widget, gpointer user_data);
 static void on_save_ticket_clicked(GtkButton *button, gpointer user_data);
 static void on_copy_folio_clicked(GtkButton *button, gpointer user_data);
+static void on_login_clicked(GtkButton *button, gpointer user_data);
+static gboolean attempt_login(const char *username, const char *password, char **role_out, char **error_out);
+static void on_register_clicked(GtkButton *button, gpointer user_data);
+static gboolean attempt_register(const char *username, const char *password, char **error_out);
+static void on_admin_manage_clicked(GtkButton *button, gpointer user_data);
+static void refresh_admin_products(void);
+static void on_admin_remove_clicked(GtkButton *button, gpointer user_data);
 
 /* Formateo entradas tarjeta */
 static void on_card_number_changed(GtkEditable *editable, gpointer user_data);
@@ -181,24 +208,64 @@ int main(int argc, char *argv[]) {
     GtkWidget *header_bar = gtk_header_bar_new();
     gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(header_bar), TRUE);
     gtk_header_bar_set_title(GTK_HEADER_BAR(header_bar), "Celu-Mercado");
-    GtkWidget *cart_button = gtk_button_new_from_icon_name("view-list-symbolic", GTK_ICON_SIZE_BUTTON);
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(header_bar), cart_button);
-    g_signal_connect(cart_button, "clicked", G_CALLBACK(on_view_cart_clicked), NULL);
+    g_admin_button = gtk_button_new_with_label("Administrar");
+    gtk_widget_set_visible(g_admin_button, FALSE);
+    gtk_header_bar_pack_start(GTK_HEADER_BAR(header_bar), g_admin_button);
+    g_signal_connect(g_admin_button, "clicked", G_CALLBACK(on_admin_manage_clicked), NULL);
+    g_cart_button = gtk_button_new_from_icon_name("view-list-symbolic", GTK_ICON_SIZE_BUTTON);
+    gtk_widget_set_sensitive(g_cart_button, FALSE);
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(header_bar), g_cart_button);
+    g_signal_connect(g_cart_button, "clicked", G_CALLBACK(on_view_cart_clicked), NULL);
     gtk_window_set_titlebar(GTK_WINDOW(window), header_bar);
 
     main_stack = gtk_stack_new();
     gtk_stack_set_transition_type(GTK_STACK(main_stack), GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT);
     gtk_container_add(GTK_CONTAINER(window), main_stack);
 
+    /* Login */
+    GtkWidget *login_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_halign(login_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(login_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_top(login_box, 40);
+    gtk_widget_set_margin_bottom(login_box, 40);
+    GtkWidget *login_title = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(login_title), "<span size='xx-large'>Inicia sesión</span>");
+    g_login_username_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(g_login_username_entry), "Usuario");
+    gtk_entry_set_activates_default(GTK_ENTRY(g_login_username_entry), TRUE);
+    g_login_password_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(g_login_password_entry), "Contraseña");
+    gtk_entry_set_visibility(GTK_ENTRY(g_login_password_entry), FALSE);
+    gtk_entry_set_input_purpose(GTK_ENTRY(g_login_password_entry), GTK_INPUT_PURPOSE_PASSWORD);
+    gtk_entry_set_activates_default(GTK_ENTRY(g_login_password_entry), TRUE);
+    GtkWidget *login_button = gtk_button_new_with_label("Ingresar");
+    gtk_widget_set_can_default(login_button, TRUE);
+    g_signal_connect(login_button, "clicked", G_CALLBACK(on_login_clicked), NULL);
+    GtkWidget *register_button = gtk_button_new_with_label("Crear cuenta");
+    gtk_widget_set_halign(register_button, GTK_ALIGN_CENTER);
+    gtk_button_set_relief(GTK_BUTTON(register_button), GTK_RELIEF_NONE);
+    g_signal_connect(register_button, "clicked", G_CALLBACK(on_register_clicked), NULL);
+    g_login_error_label = gtk_label_new("Credenciales incorrectas");
+    gtk_widget_set_halign(g_login_error_label, GTK_ALIGN_CENTER);
+    gtk_style_context_add_class(gtk_widget_get_style_context(g_login_error_label), "error-text");
+    gtk_widget_hide(g_login_error_label);
+    gtk_box_pack_start(GTK_BOX(login_box), login_title, FALSE, FALSE, 6);
+    gtk_box_pack_start(GTK_BOX(login_box), g_login_username_entry, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(login_box), g_login_password_entry, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(login_box), login_button, FALSE, FALSE, 6);
+    gtk_box_pack_start(GTK_BOX(login_box), register_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(login_box), g_login_error_label, FALSE, FALSE, 0);
+    gtk_stack_add_named(GTK_STACK(main_stack), login_box, "login_view");
+
     /* Welcome */
     GtkWidget *welcome_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 20);
     gtk_widget_set_halign(welcome_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(welcome_box, GTK_ALIGN_CENTER);
-    GtkWidget *welcome_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(welcome_label), "<span size='xx-large'>Bienvenido a Celu-Mercado</span>");
+    g_welcome_label = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(g_welcome_label), "<span size='xx-large'>Bienvenido a Celu-Mercado</span>");
     GtkWidget *start_button = gtk_button_new_with_label("Empezar a Comprar");
     g_signal_connect(start_button, "clicked", G_CALLBACK(on_start_shopping_clicked), NULL);
-    gtk_box_pack_start(GTK_BOX(welcome_box), welcome_label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(welcome_box), g_welcome_label, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(welcome_box), start_button, FALSE, FALSE, 0);
     gtk_stack_add_named(GTK_STACK(main_stack), welcome_box, "welcome_view");
 
@@ -381,12 +448,41 @@ int main(int argc, char *argv[]) {
 
     gtk_stack_add_named(GTK_STACK(main_stack), ticket_page, "ticket_view");
 
+    /* Admin view */
+    GtkWidget *admin_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_widget_set_margin_start(admin_page, 10);
+    gtk_widget_set_margin_end(admin_page, 10);
+    gtk_widget_set_margin_top(admin_page, 10);
+    gtk_widget_set_margin_bottom(admin_page, 10);
+
+    GtkWidget *admin_back = gtk_button_new_with_label("← Volver a la Tienda");
+    g_signal_connect(admin_back, "clicked", G_CALLBACK(on_back_to_shop_clicked), NULL);
+    gtk_box_pack_start(GTK_BOX(admin_page), admin_back, FALSE, FALSE, 0);
+
+    g_admin_status_label = gtk_label_new("Inicia sesión como administrador para gestionar el inventario.");
+    gtk_box_pack_start(GTK_BOX(admin_page), g_admin_status_label, FALSE, FALSE, 4);
+
+    GtkWidget *admin_sw = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(admin_sw), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_vexpand(admin_sw, TRUE);
+    g_admin_list_box = gtk_list_box_new();
+    gtk_list_box_set_selection_mode(GTK_LIST_BOX(g_admin_list_box), GTK_SELECTION_NONE);
+    gtk_container_add(GTK_CONTAINER(admin_sw), g_admin_list_box);
+    gtk_box_pack_start(GTK_BOX(admin_page), admin_sw, TRUE, TRUE, 0);
+
+    gtk_stack_add_named(GTK_STACK(main_stack), admin_page, "admin_view");
+
     gtk_widget_show_all(window);
-    gtk_stack_set_visible_child_name(GTK_STACK(main_stack), "welcome_view");
+    gtk_widget_grab_default(login_button);
+    gtk_widget_hide(g_login_error_label);
+    gtk_stack_set_visible_child_name(GTK_STACK(main_stack), "login_view");
+    gtk_widget_grab_focus(g_login_username_entry);
     gtk_main();
 
     if (server_socket >= 0) close(server_socket);
-    free(g_last_ticket_raw);
+    g_free(g_last_ticket_raw);
+    g_free(g_current_user);
+    g_free(g_user_role);
     return 0;
 }
 
@@ -397,6 +493,11 @@ static void cleanup_and_exit(GtkWidget *widget, gpointer user_data) {
 }
 
 static void on_start_shopping_clicked(GtkButton *button, gpointer user_data) {
+    if (!g_current_user) {
+        gtk_stack_set_visible_child_name(GTK_STACK(main_stack), "login_view");
+        gtk_widget_grab_focus(g_login_username_entry);
+        return;
+    }
     gtk_stack_set_visible_child_name(GTK_STACK(main_stack), "brands_view");
 }
 
@@ -411,7 +512,9 @@ static void add_btn_cb(GtkButton *btn, gpointer unused) {
 
 /* Mostrar modelos (modelo|specs|precio|imagen) */
 static void on_brand_clicked(GtkButton *button, GtkWidget *model_container) {
-    const char *brand = gtk_button_get_label(button);
+    const char *brand = g_object_get_data(G_OBJECT(button), "brand-name");
+    if (!brand || !*brand) brand = gtk_button_get_label(button);
+    if (!brand || !*brand) return;
     char command[256];
     snprintf(command, sizeof(command), "GET_MODELS:%s", brand);
     char *response = send_command(command);
@@ -500,6 +603,11 @@ static void on_add_to_cart_clicked(GtkButton *button, const char *model_name) {
 
 /* Calcular total carrito y poblar lista */
 static void on_view_cart_clicked(GtkButton *button, gpointer user_data) {
+    if (!g_current_user) {
+        gtk_stack_set_visible_child_name(GTK_STACK(main_stack), "login_view");
+        gtk_widget_grab_focus(g_login_username_entry);
+        return;
+    }
     clear_container(g_cart_list_box);
     double total = 0.0;
     char *response = send_command("GET_CART_ITEMS");
@@ -690,6 +798,11 @@ static void on_card_cvv_changed(GtkEditable *editable, gpointer user_data) {
 }
 
 static void on_checkout_clicked(GtkButton *button, gpointer user_data) {
+    if (!g_current_user) {
+        gtk_stack_set_visible_child_name(GTK_STACK(main_stack), "login_view");
+        gtk_widget_grab_focus(g_login_username_entry);
+        return;
+    }
     GtkWidget *dialog = gtk_dialog_new_with_buttons("Pago", NULL,
         GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
         "_Cancelar", GTK_RESPONSE_CANCEL,
@@ -831,7 +944,7 @@ static void on_checkout_submit(GtkDialog *dialog, gint response_id, gpointer use
         return;
     }
 
-    free(g_last_ticket_raw);
+    g_free(g_last_ticket_raw);
     g_last_ticket_raw = g_strdup(resp);
 
     char *copy = g_strdup(resp);
@@ -1008,4 +1121,395 @@ static void on_save_ticket_clicked(GtkButton *button, gpointer user_data) {
     }
 
     gtk_widget_destroy(chooser);
+}
+
+static gboolean attempt_login(const char *username, const char *password, char **role_out, char **error_out) {
+    if (role_out) *role_out = NULL;
+    if (error_out) *error_out = NULL;
+    if (!username || !*username || !password || !*password) {
+        if (error_out) *error_out = g_strdup("Ingresa usuario y contraseña.");
+        return FALSE;
+    }
+    if (strchr(username, '|') || strchr(password, '|')) {
+        if (error_out) *error_out = g_strdup("El caracter '|' no está permitido.");
+        return FALSE;
+    }
+    if (strpbrk(username, "\r\n") || strpbrk(password, "\r\n")) {
+        if (error_out) *error_out = g_strdup("No uses saltos de línea en las credenciales.");
+        return FALSE;
+    }
+
+    char command[512];
+    snprintf(command, sizeof(command), "LOGIN:%s|%s", username, password);
+    char *resp = send_command(command);
+    if (!resp) {
+        if (error_out) *error_out = g_strdup("No se pudo contactar al servidor.");
+        return FALSE;
+    }
+
+    if (g_str_has_prefix(resp, "OK")) {
+        const char *role = NULL;
+        if (resp[2] == '|') {
+            role = resp + 3;
+        } else if (resp[2] == '\0' || resp[2] == '\n') {
+            role = "cliente";
+        }
+        if (role) {
+            char *newline = strchr(role, '\n');
+            if (newline) *newline = '\0';
+            if (role_out) *role_out = g_strdup(role);
+        }
+        return TRUE;
+    }
+
+    if (error_out) {
+        if (g_str_has_prefix(resp, "ERROR|"))
+            *error_out = g_strdup(resp + 6);
+        else
+            *error_out = g_strdup("Credenciales incorrectas.");
+    }
+    return FALSE;
+}
+
+static gboolean attempt_register(const char *username, const char *password, char **error_out) {
+    if (error_out) *error_out = NULL;
+    if (!username || !*username || !password || !*password) {
+        if (error_out) *error_out = g_strdup("Ingresa usuario y contraseña.");
+        return FALSE;
+    }
+    if (strlen(username) < 3) {
+        if (error_out) *error_out = g_strdup("El usuario debe tener al menos 3 caracteres.");
+        return FALSE;
+    }
+    if (strlen(password) < 4) {
+        if (error_out) *error_out = g_strdup("La contraseña debe tener al menos 4 caracteres.");
+        return FALSE;
+    }
+    if (strchr(username, '|') || strchr(password, '|')) {
+        if (error_out) *error_out = g_strdup("El caracter '|' no está permitido.");
+        return FALSE;
+    }
+    if (strpbrk(username, "\r\n") || strpbrk(password, "\r\n")) {
+        if (error_out) *error_out = g_strdup("No uses saltos de línea.");
+        return FALSE;
+    }
+
+    char command[512];
+    snprintf(command, sizeof(command), "REGISTER:%s|%s", username, password);
+    char *resp = send_command(command);
+    if (!resp) {
+        if (error_out) *error_out = g_strdup("No se pudo contactar al servidor.");
+        return FALSE;
+    }
+
+    if (g_str_has_prefix(resp, "OK")) {
+        return TRUE;
+    }
+
+    if (g_str_has_prefix(resp, "ERROR|")) {
+        char *msg = resp + 6;
+        char *newline = strchr(msg, '\n');
+        if (newline) *newline = '\0';
+        if (error_out) *error_out = g_strdup(msg);
+    } else if (error_out) {
+        *error_out = g_strdup("Registro rechazado.");
+    }
+    return FALSE;
+}
+
+static void on_login_clicked(GtkButton *button, gpointer user_data) {
+    const char *username = gtk_entry_get_text(GTK_ENTRY(g_login_username_entry));
+    const char *password = gtk_entry_get_text(GTK_ENTRY(g_login_password_entry));
+    char *error_msg = NULL;
+    char *role = NULL;
+
+    gtk_widget_set_visible(g_admin_button, FALSE);
+
+    gboolean ok = attempt_login(username, password, &role, &error_msg);
+
+    if (!ok) {
+        g_free(role);
+        if (error_msg) {
+            gtk_label_set_text(GTK_LABEL(g_login_error_label), error_msg);
+            g_free(error_msg);
+        } else {
+            gtk_label_set_text(GTK_LABEL(g_login_error_label), "Credenciales incorrectas.");
+        }
+        gtk_widget_show(g_login_error_label);
+        gtk_entry_set_text(GTK_ENTRY(g_login_password_entry), "");
+        if (!username || !*username)
+            gtk_widget_grab_focus(g_login_username_entry);
+        else
+            gtk_widget_grab_focus(g_login_password_entry);
+        return;
+    }
+
+    gtk_widget_hide(g_login_error_label);
+    gtk_entry_set_text(GTK_ENTRY(g_login_username_entry), "");
+    gtk_entry_set_text(GTK_ENTRY(g_login_password_entry), "");
+
+    g_free(g_current_user);
+    g_current_user = g_strdup(username);
+    g_free(g_user_role);
+    g_user_role = role ? role : g_strdup("cliente");
+
+    gboolean is_admin = (g_user_role && g_strcmp0(g_user_role, "admin") == 0);
+    gtk_widget_set_visible(g_admin_button, is_admin);
+    gtk_widget_set_sensitive(g_cart_button, TRUE);
+    if (g_admin_status_label) {
+        gtk_label_set_text(GTK_LABEL(g_admin_status_label),
+                           is_admin ? "Selecciona un modelo para eliminarlo del inventario." :
+                                      "Inicia sesión como administrador para gestionar el inventario.");
+    }
+
+    char *welcome_markup = g_markup_printf_escaped("<span size='xx-large'>Bienvenido, %s</span>", g_current_user);
+    gtk_label_set_markup(GTK_LABEL(g_welcome_label), welcome_markup);
+    g_free(welcome_markup);
+
+    gtk_stack_set_visible_child_name(GTK_STACK(main_stack), "welcome_view");
+}
+
+static void on_register_clicked(GtkButton *button, gpointer user_data) {
+    GtkWidget *dialog = gtk_dialog_new_with_buttons("Crear cuenta", NULL,
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "_Cancelar", GTK_RESPONSE_CANCEL,
+        "_Crear", GTK_RESPONSE_OK,
+        NULL);
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
+
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_box_pack_start(GTK_BOX(content), box, TRUE, TRUE, 8);
+
+    GtkWidget *user_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(user_entry), "Usuario");
+    gtk_entry_set_activates_default(GTK_ENTRY(user_entry), TRUE);
+    GtkWidget *pass_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(pass_entry), "Contraseña");
+    gtk_entry_set_visibility(GTK_ENTRY(pass_entry), FALSE);
+    gtk_entry_set_input_purpose(GTK_ENTRY(pass_entry), GTK_INPUT_PURPOSE_PASSWORD);
+    gtk_entry_set_activates_default(GTK_ENTRY(pass_entry), TRUE);
+    GtkWidget *confirm_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(confirm_entry), "Confirmar contraseña");
+    gtk_entry_set_visibility(GTK_ENTRY(confirm_entry), FALSE);
+    gtk_entry_set_input_purpose(GTK_ENTRY(confirm_entry), GTK_INPUT_PURPOSE_PASSWORD);
+    gtk_entry_set_activates_default(GTK_ENTRY(confirm_entry), TRUE);
+
+    GtkWidget *error_label = gtk_label_new(NULL);
+    gtk_widget_set_halign(error_label, GTK_ALIGN_CENTER);
+    gtk_style_context_add_class(gtk_widget_get_style_context(error_label), "error-text");
+    gtk_widget_hide(error_label);
+
+    gtk_box_pack_start(GTK_BOX(box), user_entry, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), pass_entry, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), confirm_entry, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), error_label, FALSE, FALSE, 0);
+
+    gtk_widget_show_all(dialog);
+    gtk_widget_hide(error_label);
+
+    gboolean created = FALSE;
+    while (TRUE) {
+        gint resp = gtk_dialog_run(GTK_DIALOG(dialog));
+        if (resp != GTK_RESPONSE_OK) break;
+
+        const char *new_user = gtk_entry_get_text(GTK_ENTRY(user_entry));
+        const char *new_pass = gtk_entry_get_text(GTK_ENTRY(pass_entry));
+        const char *new_confirm = gtk_entry_get_text(GTK_ENTRY(confirm_entry));
+
+        if (g_strcmp0(new_pass, new_confirm) != 0) {
+            gtk_label_set_text(GTK_LABEL(error_label), "Las contraseñas no coinciden.");
+            gtk_widget_show(error_label);
+            gtk_entry_set_text(GTK_ENTRY(pass_entry), "");
+            gtk_entry_set_text(GTK_ENTRY(confirm_entry), "");
+            gtk_widget_grab_focus(confirm_entry);
+            continue;
+        }
+
+        char *error_msg = NULL;
+        gboolean ok = attempt_register(new_user, new_pass, &error_msg);
+        if (!ok) {
+            gtk_label_set_text(GTK_LABEL(error_label), error_msg ? error_msg : "Registro rechazado.");
+            gtk_widget_show(error_label);
+            g_free(error_msg);
+            gtk_entry_set_text(GTK_ENTRY(pass_entry), "");
+            gtk_entry_set_text(GTK_ENTRY(confirm_entry), "");
+            gtk_widget_grab_focus(pass_entry);
+            continue;
+        }
+
+        created = TRUE;
+        gtk_entry_set_text(GTK_ENTRY(g_login_username_entry), new_user);
+        gtk_entry_set_text(GTK_ENTRY(g_login_password_entry), "");
+        gtk_widget_hide(error_label);
+        break;
+    }
+
+    gtk_widget_destroy(dialog);
+
+    if (created) {
+        GtkWidget *info = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL,
+            GTK_MESSAGE_INFO, GTK_BUTTONS_OK,
+            "Cuenta creada correctamente. Ingresa con tus nuevas credenciales.");
+        gtk_dialog_run(GTK_DIALOG(info));
+        gtk_widget_destroy(info);
+        gtk_widget_grab_focus(g_login_password_entry);
+    }
+}
+
+static void on_admin_manage_clicked(GtkButton *button, gpointer user_data) {
+    (void)button; (void)user_data;
+    if (!g_current_user) {
+        gtk_stack_set_visible_child_name(GTK_STACK(main_stack), "login_view");
+        gtk_widget_grab_focus(g_login_username_entry);
+        return;
+    }
+    if (!g_user_role || g_strcmp0(g_user_role, "admin") != 0) {
+        GtkWidget *d = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL,
+            GTK_MESSAGE_WARNING, GTK_BUTTONS_OK,
+            "Esta sección es solo para administradores.");
+        gtk_dialog_run(GTK_DIALOG(d));
+        gtk_widget_destroy(d);
+        return;
+    }
+    refresh_admin_products();
+    gtk_stack_set_visible_child_name(GTK_STACK(main_stack), "admin_view");
+}
+
+static void refresh_admin_products(void) {
+    if (!g_admin_list_box) return;
+    clear_container(g_admin_list_box);
+
+    if (!g_current_user || !g_user_role || g_strcmp0(g_user_role, "admin") != 0) {
+        if (g_admin_status_label)
+            gtk_label_set_text(GTK_LABEL(g_admin_status_label),
+                "Inicia sesión como administrador para gestionar el inventario.");
+        return;
+    }
+
+    char *resp = send_command("GET_ALL_PRODUCTS");
+    if (!resp) {
+        if (g_admin_status_label)
+            gtk_label_set_text(GTK_LABEL(g_admin_status_label),
+                "No se pudo obtener el inventario. Intenta más tarde.");
+        return;
+    }
+
+    if (g_str_has_prefix(resp, "ERROR|")) {
+        char *msg = resp + 6;
+        char *newline = strchr(msg, '\n');
+        if (newline) *newline = '\0';
+        if (g_admin_status_label)
+            gtk_label_set_text(GTK_LABEL(g_admin_status_label), msg);
+        return;
+    }
+
+    if (g_str_has_prefix(resp, "EMPTY")) {
+        GtkWidget *label = gtk_label_new("No hay productos actualmente.");
+        gtk_list_box_insert(GTK_LIST_BOX(g_admin_list_box), label, -1);
+        if (g_admin_status_label)
+            gtk_label_set_text(GTK_LABEL(g_admin_status_label),
+                "El inventario está vacío.");
+        gtk_widget_show_all(g_admin_list_box);
+        return;
+    }
+
+    char *copy = g_strdup(resp);
+    char *saveptr;
+    char *line = strtok_r(copy, "\n", &saveptr);
+    int count = 0;
+    while (line && *line) {
+        char *sp;
+        char *marca  = strtok_r(line, "|", &sp);
+        char *modelo = strtok_r(NULL, "|", &sp);
+        char *specs  = strtok_r(NULL, "|", &sp);
+        char *precio = strtok_r(NULL, "|", &sp);
+        if (marca && modelo && specs && precio) {
+            GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+            gtk_widget_set_margin_top(row, 4);
+            gtk_widget_set_margin_bottom(row, 4);
+
+            GtkWidget *info_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+            char *title_markup = g_markup_printf_escaped("<span weight='bold'>%s %s</span>", marca, modelo);
+            GtkWidget *title_label = gtk_label_new(NULL);
+            gtk_label_set_markup(GTK_LABEL(title_label), title_markup);
+            g_free(title_markup);
+
+            GtkWidget *specs_label = gtk_label_new(specs);
+            gtk_label_set_line_wrap(GTK_LABEL(specs_label), TRUE);
+
+            GtkWidget *price_label = gtk_label_new(NULL);
+            char price_text[64];
+            snprintf(price_text, sizeof(price_text), "$ %s", precio);
+            gtk_label_set_text(GTK_LABEL(price_label), price_text);
+
+            gtk_box_pack_start(GTK_BOX(info_box), title_label, FALSE, FALSE, 0);
+            gtk_box_pack_start(GTK_BOX(info_box), specs_label, FALSE, FALSE, 0);
+            gtk_box_pack_start(GTK_BOX(info_box), price_label, FALSE, FALSE, 0);
+
+            GtkWidget *remove_btn = gtk_button_new_with_label("Eliminar");
+            gtk_widget_set_halign(remove_btn, GTK_ALIGN_END);
+            gtk_widget_set_valign(remove_btn, GTK_ALIGN_CENTER);
+            g_object_set_data_full(G_OBJECT(remove_btn), "model-name", g_strdup(modelo), g_free);
+            g_signal_connect(remove_btn, "clicked", G_CALLBACK(on_admin_remove_clicked), NULL);
+
+            gtk_box_pack_start(GTK_BOX(row), info_box, TRUE, TRUE, 0);
+            gtk_box_pack_end(GTK_BOX(row), remove_btn, FALSE, FALSE, 0);
+
+            gtk_list_box_insert(GTK_LIST_BOX(g_admin_list_box), row, -1);
+            count++;
+        }
+        line = strtok_r(NULL, "\n", &saveptr);
+    }
+    g_free(copy);
+
+    if (g_admin_status_label) {
+        if (count > 0)
+            gtk_label_set_text(GTK_LABEL(g_admin_status_label),
+                "Da clic en \"Eliminar\" para remover un modelo.");
+        else
+            gtk_label_set_text(GTK_LABEL(g_admin_status_label),
+                "No se encontraron productos activos.");
+    }
+
+    gtk_widget_show_all(g_admin_list_box);
+}
+
+static void on_admin_remove_clicked(GtkButton *button, gpointer user_data) {
+    (void)user_data;
+    const char *modelo = g_object_get_data(G_OBJECT(button), "model-name");
+    if (!modelo) return;
+
+    GtkWidget *confirm = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL,
+        GTK_MESSAGE_QUESTION, GTK_BUTTONS_NONE,
+        "¿Eliminar el modelo %s del inventario?", modelo);
+    gtk_dialog_add_buttons(GTK_DIALOG(confirm), "Cancelar", GTK_RESPONSE_CANCEL,
+        "Eliminar", GTK_RESPONSE_ACCEPT, NULL);
+    gtk_dialog_set_default_response(GTK_DIALOG(confirm), GTK_RESPONSE_ACCEPT);
+    gint resp = gtk_dialog_run(GTK_DIALOG(confirm));
+    gtk_widget_destroy(confirm);
+    if (resp != GTK_RESPONSE_ACCEPT) return;
+
+    char command[512];
+    snprintf(command, sizeof(command), "REMOVE_PRODUCT:%s", modelo);
+    char *server_resp = send_command(command);
+    if (!server_resp) return;
+
+    if (g_str_has_prefix(server_resp, "OK")) {
+        if (g_admin_status_label)
+            gtk_label_set_text(GTK_LABEL(g_admin_status_label), "Modelo eliminado correctamente.");
+        refresh_admin_products();
+    } else {
+        const char *msg = "No se pudo eliminar el modelo.";
+        if (g_str_has_prefix(server_resp, "ERROR|")) {
+            msg = server_resp + 6;
+            char *newline = strchr((char*)msg, '\n');
+            if (newline) *newline = '\0';
+        }
+        GtkWidget *err = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL,
+            GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
+            "%s", msg);
+        gtk_dialog_run(GTK_DIALOG(err));
+        gtk_widget_destroy(err);
+    }
 }
