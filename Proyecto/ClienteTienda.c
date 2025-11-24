@@ -2,16 +2,6 @@
  * ClienteTienda.c
  * Compilar:
  * gcc -std=gnu11 -Wall -Wextra -pedantic ClienteTienda.c -o cliente $(pkg-config --cflags --libs gtk+-3.0 gdk-pixbuf-2.0)
- *
- * Mejoras implementadas:
- * - Protocolo optimizado (GET_MODELS ya incluye specs).
- * - Eliminado botón "Ver Detalles".
- * - Total parcial del carrito.
- * - Diálogo de pago con formateo de tarjeta, CVV y fecha.
- * - Folio OXXO + botón "Copiar".
- * - Guardar ticket a CSV/TXT.
- * - CSS básico (style.css).
- */
 
 #include <gtk/gtk.h>
 #include <stdio.h>
