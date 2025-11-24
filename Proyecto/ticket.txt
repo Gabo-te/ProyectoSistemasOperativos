@@ -1,0 +1,2 @@
+Modelo,Marca,Specs,Precio,Imagen
+"Galaxy S24","Samsung","FHD+ Snapdragon 8 Gen 3 8GB RAM 256GB","12999.00","/home/jgabriel/SistemasOperativos/Proyecto/images/S24.jpg"

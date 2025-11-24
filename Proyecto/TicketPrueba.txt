@@ -1,0 +1,4 @@
+Modelo,Marca,Specs,Precio,Imagen
+"Magic 6 Lite","Honor","Snapdragon 6 Gen 1 8GB RAM 256GB","7999.00","/home/jgabriel/SistemasOperativos/Proyecto/images/Magic6Lite.jpg"
+"iPhone 15 Pro","Apple","A17 Pro 8GB RAM 256GB","25999.00","/home/jgabriel/SistemasOperativos/Proyecto/images/Iphone15Pro.jpg"
+"Galaxy S24 Ultra","Samsung","QHD+ Snapdragon 8 gen 3 12GM RAM 1TB","17999.00","/home/jgabriel/SistemasOperativos/Proyecto/images/S24Ultra.jpg"
