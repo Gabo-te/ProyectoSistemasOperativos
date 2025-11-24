@@ -1,13 +1,7 @@
 /*
  * ServidorTienda.c
  * Compilar: gcc -std=gnu11 -Wall -Wextra -pedantic ServidorTienda.c -o ServidorTienda -lpthread
- *
- * Correcciones:
- * - Uso de strdup (no g_strdup) para evitar dependencia a GLib.
- * - Trim seguro en el mismo buffer.
- * - Eliminación de separadores de miles (comas) en precio.
- * - GET_BRANDS devuelve marcas únicas y sin '|' final.
- */
+
 
 #include <stdio.h>
 #include <stdlib.h>
