@@ -1,7 +1,7 @@
 /*
  * ClienteTienda.c
  * Compilar:
- * gcc -std=gnu11 -Wall -Wextra -pedantic ClienteTienda.c -o cliente $(pkg-config --cflags --libs gtk+-3.0 gdk-pixbuf-2.0)
+ * gcc -std=gnu11 -Wall -Wextra -pedantic ClienteTienda.c -o ClienteTienda $(pkg-config --cflags --libs gtk+-3.0 gdk-pixbuf-2.0)
  *
  * Mejoras implementadas:
  * - Protocolo optimizado (GET_MODELS ya incluye specs).
@@ -10,7 +10,7 @@
  * - Diálogo de pago con formateo de tarjeta, CVV y fecha.
  * - Folio OXXO + botón "Copiar".
  * - Guardar ticket a CSV/TXT.
- * - CSS básico (style.css).
+ * - CSS tipo tienda en línea (style.css).
  */
 
 #include <gtk/gtk.h>
@@ -23,7 +23,7 @@
 #include <ctype.h>
 #include <time.h>
 
-#define SERVER_PORT 8080
+#define SERVER_PORT 5000
 #define BUFFER_SIZE 8192
 
 /* Globals */
@@ -208,14 +208,28 @@ int main(int argc, char *argv[]) {
     GtkWidget *header_bar = gtk_header_bar_new();
     gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(header_bar), TRUE);
     gtk_header_bar_set_title(GTK_HEADER_BAR(header_bar), "Celu-Mercado");
+
+    /* Botón Administrar */
     g_admin_button = gtk_button_new_with_label("Administrar");
+    gtk_style_context_add_class(gtk_widget_get_style_context(g_admin_button), "header-btn");
     gtk_widget_set_visible(g_admin_button, FALSE);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header_bar), g_admin_button);
     g_signal_connect(g_admin_button, "clicked", G_CALLBACK(on_admin_manage_clicked), NULL);
-    g_cart_button = gtk_button_new_from_icon_name("view-list-symbolic", GTK_ICON_SIZE_BUTTON);
+
+    /* Botón Carrito: icono + texto */
+    GtkWidget *cart_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    GtkWidget *cart_icon = gtk_image_new_from_icon_name("view-list-symbolic", GTK_ICON_SIZE_MENU);
+    GtkWidget *cart_label = gtk_label_new("Carrito");
+    gtk_box_pack_start(GTK_BOX(cart_box), cart_icon, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(cart_box), cart_label, FALSE, FALSE, 0);
+
+    g_cart_button = gtk_button_new();
+    gtk_container_add(GTK_CONTAINER(g_cart_button), cart_box);
     gtk_widget_set_sensitive(g_cart_button, FALSE);
+    gtk_style_context_add_class(gtk_widget_get_style_context(g_cart_button), "header-cart-btn");
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header_bar), g_cart_button);
     g_signal_connect(g_cart_button, "clicked", G_CALLBACK(on_view_cart_clicked), NULL);
+
     gtk_window_set_titlebar(GTK_WINDOW(window), header_bar);
 
     main_stack = gtk_stack_new();
@@ -230,6 +244,7 @@ int main(int argc, char *argv[]) {
     gtk_widget_set_margin_bottom(login_box, 40);
     GtkWidget *login_title = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(login_title), "<span size='xx-large'>Inicia sesión</span>");
+    gtk_style_context_add_class(gtk_widget_get_style_context(login_title), "title-label");
     g_login_username_entry = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(g_login_username_entry), "Usuario");
     gtk_entry_set_activates_default(GTK_ENTRY(g_login_username_entry), TRUE);
@@ -240,6 +255,7 @@ int main(int argc, char *argv[]) {
     gtk_entry_set_activates_default(GTK_ENTRY(g_login_password_entry), TRUE);
     GtkWidget *login_button = gtk_button_new_with_label("Ingresar");
     gtk_widget_set_can_default(login_button, TRUE);
+    gtk_style_context_add_class(gtk_widget_get_style_context(login_button), "suggested-action");
     g_signal_connect(login_button, "clicked", G_CALLBACK(on_login_clicked), NULL);
     GtkWidget *register_button = gtk_button_new_with_label("Crear cuenta");
     gtk_widget_set_halign(register_button, GTK_ALIGN_CENTER);
@@ -263,20 +279,33 @@ int main(int argc, char *argv[]) {
     gtk_widget_set_valign(welcome_box, GTK_ALIGN_CENTER);
     g_welcome_label = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(g_welcome_label), "<span size='xx-large'>Bienvenido a Celu-Mercado</span>");
+    gtk_style_context_add_class(gtk_widget_get_style_context(g_welcome_label), "title-label");
     GtkWidget *start_button = gtk_button_new_with_label("Empezar a Comprar");
+    gtk_style_context_add_class(gtk_widget_get_style_context(start_button), "suggested-action");
     g_signal_connect(start_button, "clicked", G_CALLBACK(on_start_shopping_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(welcome_box), g_welcome_label, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(welcome_box), start_button, FALSE, FALSE, 0);
     gtk_stack_add_named(GTK_STACK(main_stack), welcome_box, "welcome_view");
 
     /* Brands */
+    GtkWidget *brands_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_widget_set_margin_top(brands_page, 20);
+    gtk_widget_set_margin_start(brands_page, 20);
+    gtk_widget_set_margin_end(brands_page, 20);
+
+    GtkWidget *brands_title = gtk_label_new("Explora por marca");
+    gtk_widget_set_halign(brands_title, GTK_ALIGN_START);
+    gtk_style_context_add_class(gtk_widget_get_style_context(brands_title), "subtitle-label");
+    gtk_box_pack_start(GTK_BOX(brands_page), brands_title, FALSE, FALSE, 0);
+
     GtkWidget *brands_flow = gtk_flow_box_new();
     gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(brands_flow), 3);
     gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(brands_flow), GTK_SELECTION_NONE);
     gtk_widget_set_margin_top(brands_flow, 20);
-    gtk_widget_set_margin_start(brands_flow, 40);
-    gtk_widget_set_margin_end(brands_flow, 40);
-    gtk_stack_add_named(GTK_STACK(main_stack), brands_flow, "brands_view");
+    gtk_widget_set_margin_start(brands_flow, 20);
+    gtk_widget_set_margin_end(brands_flow, 20);
+    gtk_box_pack_start(GTK_BOX(brands_page), brands_flow, TRUE, TRUE, 0);
+    gtk_stack_add_named(GTK_STACK(main_stack), brands_page, "brands_view");
 
     /* Models */
     GtkWidget *models_page_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
@@ -301,7 +330,7 @@ int main(int argc, char *argv[]) {
     gtk_box_pack_start(GTK_BOX(models_page_box), models_scrolled, TRUE, TRUE, 0);
     gtk_stack_add_named(GTK_STACK(main_stack), models_page_box, "models_view");
 
-        /* Obtener marcas (ahora con carga de logos) */
+    /* Obtener marcas */
     char *brands_response = send_command("GET_BRANDS");
     if (brands_response) {
         char *copy = g_strdup(brands_response);
@@ -309,15 +338,13 @@ int main(int argc, char *argv[]) {
         char *brand = strtok_r(copy, "|", &saveptr);
         while (brand) {
             if (*brand != '\0') {
-                /* crear "slug" para archivo de logo: lower + replace spaces by '_' + keep alnum/_ */
                 char slug[256]; int si = 0;
                 for (const char *p = brand; *p && si < (int)sizeof(slug)-1; ++p) {
                     unsigned char c = (unsigned char)*p;
                     if (isspace(c)) { if (si && slug[si-1] != '_') slug[si++] = '_'; }
                     else if (isalnum(c) || c == '_' ) slug[si++] = (char)tolower(c);
-                    /* else skip */
                 }
-                if (si == 0) { /* fallback simple */
+                if (si == 0) {
                     strncpy(slug, brand, sizeof(slug)-1);
                     slug[sizeof(slug)-1] = '\0';
                 } else slug[si] = '\0';
@@ -325,7 +352,6 @@ int main(int argc, char *argv[]) {
                 char logo_path[512];
                 snprintf(logo_path, sizeof(logo_path), "images/logos/%s.png", slug);
 
-                /* intentar cargar pixbuf del logo */
                 GdkPixbuf *logo_px = NULL;
                 GError *err = NULL;
                 logo_px = gdk_pixbuf_new_from_file(logo_path, &err);
@@ -339,15 +365,12 @@ int main(int argc, char *argv[]) {
                     if (scaled) g_object_unref(scaled);
                     btn = gtk_button_new();
                     gtk_button_set_image(GTK_BUTTON(btn), img);
-                    /* tooltip para accesibilidad */
                     gtk_widget_set_tooltip_text(btn, brand);
                 } else {
-                    /* fallback: texto */
                     btn = gtk_button_new_with_label(brand);
                     gtk_widget_set_size_request(btn, 150, 70);
                 }
 
-                /* almacenar brand en data para el click handler */
                 g_object_set_data_full(G_OBJECT(btn), "brand-name", g_strdup(brand), g_free);
                 g_signal_connect(btn, "clicked", G_CALLBACK(on_brand_clicked), model_flow);
 
@@ -373,6 +396,11 @@ int main(int argc, char *argv[]) {
     g_signal_connect(back_button, "clicked", G_CALLBACK(on_back_to_shop_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(cart_page_box), back_button, FALSE, FALSE, 0);
 
+    GtkWidget *cart_title = gtk_label_new("Tu carrito de compras");
+    gtk_widget_set_halign(cart_title, GTK_ALIGN_START);
+    gtk_style_context_add_class(gtk_widget_get_style_context(cart_title), "subtitle-label");
+    gtk_box_pack_start(GTK_BOX(cart_page_box), cart_title, FALSE, FALSE, 2);
+
     GtkWidget *filter_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_box_pack_start(GTK_BOX(cart_page_box), filter_box, FALSE, FALSE, 5);
     GtkWidget *filter_modelo_entry = gtk_entry_new();
@@ -381,6 +409,9 @@ int main(int argc, char *argv[]) {
     gtk_entry_set_placeholder_text(GTK_ENTRY(filter_marca_entry), "Filtrar por marca...");
     GtkWidget *filter_procesador_entry = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(filter_procesador_entry), "Filtrar por procesador...");
+    gtk_style_context_add_class(gtk_widget_get_style_context(filter_modelo_entry), "filter-entry");
+    gtk_style_context_add_class(gtk_widget_get_style_context(filter_marca_entry), "filter-entry");
+    gtk_style_context_add_class(gtk_widget_get_style_context(filter_procesador_entry), "filter-entry");
     gtk_box_pack_start(GTK_BOX(filter_box), filter_modelo_entry, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(filter_box), filter_marca_entry, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(filter_box), filter_procesador_entry, TRUE, TRUE, 0);
@@ -395,11 +426,13 @@ int main(int argc, char *argv[]) {
 
     GtkWidget *cart_total_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     g_cart_total_label = gtk_label_new("Total carrito: $ 0.00");
+    gtk_style_context_add_class(gtk_widget_get_style_context(g_cart_total_label), "total-label");
     gtk_box_pack_end(GTK_BOX(cart_total_box), g_cart_total_label, FALSE, FALSE, 5);
     gtk_box_pack_start(GTK_BOX(cart_page_box), cart_total_box, FALSE, FALSE, 5);
 
     GtkWidget *proceed_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     GtkWidget *proceed_button = gtk_button_new_with_label("Proceder al pago");
+    gtk_style_context_add_class(gtk_widget_get_style_context(proceed_button), "suggested-action");
     g_signal_connect(proceed_button, "clicked", G_CALLBACK(on_checkout_clicked), NULL);
     gtk_box_pack_end(GTK_BOX(proceed_box), proceed_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(cart_page_box), proceed_box, FALSE, FALSE, 5);
@@ -425,12 +458,17 @@ int main(int argc, char *argv[]) {
     g_signal_connect(ticket_back, "clicked", G_CALLBACK(on_back_to_shop_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(ticket_page), ticket_back, FALSE, FALSE, 0);
 
+    GtkWidget *ticket_container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_style_context_add_class(gtk_widget_get_style_context(ticket_container), "ticket-box");
+    gtk_box_pack_start(GTK_BOX(ticket_page), ticket_container, TRUE, TRUE, 0);
+
     GtkWidget *ticket_info = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     g_ticket_date_label = gtk_label_new("Fecha: ");
     g_ticket_total_label = gtk_label_new("Total: $ 0.00");
+    gtk_style_context_add_class(gtk_widget_get_style_context(g_ticket_total_label), "total-label");
     gtk_box_pack_start(GTK_BOX(ticket_info), g_ticket_date_label, FALSE, FALSE, 0);
     gtk_box_pack_end(GTK_BOX(ticket_info), g_ticket_total_label, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(ticket_page), ticket_info, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(ticket_container), ticket_info, FALSE, FALSE, 0);
 
     GtkWidget *ticket_sw = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(ticket_sw), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
@@ -438,13 +476,14 @@ int main(int argc, char *argv[]) {
     g_ticket_list_box = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(g_ticket_list_box), GTK_SELECTION_NONE);
     gtk_container_add(GTK_CONTAINER(ticket_sw), g_ticket_list_box);
-    gtk_box_pack_start(GTK_BOX(ticket_page), ticket_sw, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(ticket_container), ticket_sw, TRUE, TRUE, 0);
 
     GtkWidget *ticket_actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     g_ticket_save_button = gtk_button_new_with_label("Guardar Ticket");
+    gtk_style_context_add_class(gtk_widget_get_style_context(g_ticket_save_button), "suggested-action");
     g_signal_connect(g_ticket_save_button, "clicked", G_CALLBACK(on_save_ticket_clicked), NULL);
     gtk_box_pack_end(GTK_BOX(ticket_actions), g_ticket_save_button, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(ticket_page), ticket_actions, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(ticket_container), ticket_actions, FALSE, FALSE, 0);
 
     gtk_stack_add_named(GTK_STACK(main_stack), ticket_page, "ticket_view");
 
@@ -532,15 +571,26 @@ static void on_brand_clicked(GtkButton *button, GtkWidget *model_container) {
         char *image_path = strtok_r(NULL, "|", &sp);
         if (model_name && specs && price && image_path) {
             GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-            gtk_widget_set_size_request(card, 220, 340);
             gtk_widget_set_margin_start(card, 10);
             gtk_widget_set_margin_end(card, 10);
             gtk_widget_set_margin_top(card, 6);
             gtk_widget_set_margin_bottom(card, 6);
+            gtk_widget_set_size_request(card, 220, 360);
+            gtk_style_context_add_class(gtk_widget_get_style_context(card), "model-card");
+
+            /* Caja de imagen */
+            GtkWidget *img_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+            gtk_style_context_add_class(gtk_widget_get_style_context(img_box), "model-card-image-box");
+            gtk_widget_set_halign(img_box, GTK_ALIGN_CENTER);
 
             GdkPixbuf *px = scale_pixbuf(image_path, 160, 160);
             GtkWidget *img = gtk_image_new_from_pixbuf(px);
             if (px) g_object_unref(px);
+            gtk_box_pack_start(GTK_BOX(img_box), img, FALSE, FALSE, 0);
+
+            /* Caja de contenido */
+            GtkWidget *content_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+            gtk_style_context_add_class(gtk_widget_get_style_context(content_box), "model-card-content");
 
             GtkWidget *name_label = gtk_label_new(NULL);
             char name_markup[256];
@@ -548,28 +598,33 @@ static void on_brand_clicked(GtkButton *button, GtkWidget *model_container) {
             gtk_label_set_markup(GTK_LABEL(name_label), name_markup);
             gtk_label_set_line_wrap(GTK_LABEL(name_label), TRUE);
             gtk_widget_set_halign(name_label, GTK_ALIGN_CENTER);
+            gtk_style_context_add_class(gtk_widget_get_style_context(name_label), "model-card-title");
 
             GtkWidget *specs_label = gtk_label_new(specs);
             gtk_label_set_line_wrap(GTK_LABEL(specs_label), TRUE);
             gtk_widget_set_size_request(specs_label, 200, -1);
             gtk_widget_set_halign(specs_label, GTK_ALIGN_CENTER);
+            gtk_style_context_add_class(gtk_widget_get_style_context(specs_label), "model-card-specs");
 
             GtkWidget *price_label = gtk_label_new(NULL);
             char price_markup[128];
             snprintf(price_markup, sizeof(price_markup), "<span weight='bold'>$ %s</span>", price);
             gtk_label_set_markup(GTK_LABEL(price_label), price_markup);
             gtk_widget_set_halign(price_label, GTK_ALIGN_CENTER);
+            gtk_style_context_add_class(gtk_widget_get_style_context(price_label), "model-card-price");
 
             GtkWidget *add_button = gtk_button_new_with_label("Añadir al carrito");
             g_object_set_data_full(G_OBJECT(add_button), "model-name", g_strdup(model_name), g_free);
+            gtk_style_context_add_class(gtk_widget_get_style_context(add_button), "suggested-action");
             g_signal_connect(add_button, "clicked", G_CALLBACK(add_btn_cb), NULL);
 
-            /*Ensamblar tarjeta*/
-            gtk_box_pack_start(GTK_BOX(card), img, FALSE, FALSE, 0);
-            gtk_box_pack_start(GTK_BOX(card), name_label, FALSE, FALSE, 0);
-            gtk_box_pack_start(GTK_BOX(card), specs_label, FALSE, FALSE, 0);
-            gtk_box_pack_start(GTK_BOX(card), price_label, FALSE, FALSE, 0);
-            gtk_box_pack_start(GTK_BOX(card), add_button, FALSE, FALSE, 6);
+            gtk_box_pack_start(GTK_BOX(content_box), name_label, FALSE, FALSE, 0);
+            gtk_box_pack_start(GTK_BOX(content_box), specs_label, FALSE, FALSE, 0);
+            gtk_box_pack_start(GTK_BOX(content_box), price_label, FALSE, FALSE, 4);
+            gtk_box_pack_end(GTK_BOX(content_box), add_button, FALSE, FALSE, 0);
+
+            gtk_box_pack_start(GTK_BOX(card), img_box, FALSE, FALSE, 0);
+            gtk_box_pack_start(GTK_BOX(card), content_box, TRUE, TRUE, 0);
 
             gtk_flow_box_insert(GTK_FLOW_BOX(model_container), card, -1);
         }
@@ -643,6 +698,7 @@ static void on_view_cart_clicked(GtkButton *button, gpointer user_data) {
             gtk_widget_set_margin_bottom(row_box, 10);
             gtk_widget_set_margin_start(row_box, 10);
             gtk_widget_set_margin_end(row_box, 10);
+            gtk_style_context_add_class(gtk_widget_get_style_context(row_box), "cart-row");
 
             GdkPixbuf *pixbuf = scale_pixbuf(imagen, 100, 100);
             GtkWidget *image_widget = gtk_image_new_from_pixbuf(pixbuf);
@@ -730,7 +786,7 @@ static void payment_radio_toggled(GtkToggleButton *toggle, gpointer user_data) {
     const char *label = gtk_button_get_label(GTK_BUTTON(toggle));
     if (g_strcmp0(label, "PayPal") == 0)
         gtk_stack_set_visible_child_name(stack, "PayPal");
-    else if (g_strcmp0(label, "TDC/TDD") == 0)
+    else if (g_strcmp0(label, "Tarjeta (TDC/TDD)") == 0)
         gtk_stack_set_visible_child_name(stack, "TDC/TDD");
     else if (g_strcmp0(label, "Depósito en OXXO") == 0)
         gtk_stack_set_visible_child_name(stack, "Depósito en OXXO");
@@ -808,34 +864,43 @@ static void on_checkout_clicked(GtkButton *button, gpointer user_data) {
         "_Cancelar", GTK_RESPONSE_CANCEL,
         "_Pagar", GTK_RESPONSE_OK,
         NULL);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 500, 330);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 360);
 
     GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
-    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_box_pack_start(GTK_BOX(content), vbox, TRUE, TRUE, 8);
+    GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_box_pack_start(GTK_BOX(content), outer, TRUE, TRUE, 8);
+
+    GtkWidget *payment_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_style_context_add_class(gtk_widget_get_style_context(payment_box), "payment-box");
+    gtk_box_pack_start(GTK_BOX(outer), payment_box, TRUE, TRUE, 0);
 
     GtkWidget *radio_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *rb1 = gtk_radio_button_new_with_label(NULL, "PayPal");
-    GtkWidget *rb2 = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(rb1), "TDC/TDD");
+    GtkWidget *rb2 = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(rb1), "Tarjeta (TDC/TDD)");
     GtkWidget *rb3 = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(rb1), "Depósito en OXXO");
     gtk_box_pack_start(GTK_BOX(radio_box), rb1, FALSE, FALSE, 6);
     gtk_box_pack_start(GTK_BOX(radio_box), rb2, FALSE, FALSE, 6);
     gtk_box_pack_start(GTK_BOX(radio_box), rb3, FALSE, FALSE, 6);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(rb1), TRUE);
-    gtk_box_pack_start(GTK_BOX(vbox), radio_box, FALSE, FALSE, 6);
+    gtk_box_pack_start(GTK_BOX(payment_box), radio_box, FALSE, FALSE, 6);
 
     GtkWidget *stack = gtk_stack_new();
     gtk_widget_set_hexpand(stack, TRUE);
     gtk_widget_set_vexpand(stack, TRUE);
 
     GtkWidget *paypal_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *paypal_title = gtk_label_new("Paga con tu cuenta PayPal");
+    gtk_style_context_add_class(gtk_widget_get_style_context(paypal_title), "subtitle-label");
     GtkWidget *paypal_label = gtk_label_new("Correo PayPal:");
     GtkWidget *paypal_entry = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(paypal_entry), "email@ejemplo.com");
+    gtk_box_pack_start(GTK_BOX(paypal_box), paypal_title, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(paypal_box), paypal_label, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(paypal_box), paypal_entry, FALSE, FALSE, 0);
 
     GtkWidget *card_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *card_title = gtk_label_new("Paga con tarjeta de crédito o débito");
+    gtk_style_context_add_class(gtk_widget_get_style_context(card_title), "subtitle-label");
     GtkWidget *card_number = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(card_number), "Número de tarjeta");
     GtkWidget *card_name = gtk_entry_new();
@@ -844,6 +909,7 @@ static void on_checkout_clicked(GtkButton *button, gpointer user_data) {
     gtk_entry_set_placeholder_text(GTK_ENTRY(card_exp), "MM/AA");
     GtkWidget *card_cvv = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(card_cvv), "CVV");
+    gtk_box_pack_start(GTK_BOX(card_box), card_title, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(card_box), card_number, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(card_box), card_name, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(card_box), card_exp, FALSE, FALSE, 0);
@@ -853,13 +919,16 @@ static void on_checkout_clicked(GtkButton *button, gpointer user_data) {
     g_signal_connect(card_cvv, "changed", G_CALLBACK(on_card_cvv_changed), NULL);
 
     GtkWidget *oxxo_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    GtkWidget *oxxo_label = gtk_label_new("Se generará un folio al confirmar.");
+    GtkWidget *oxxo_title = gtk_label_new("Paga en efectivo en cualquier OXXO");
+    gtk_style_context_add_class(gtk_widget_get_style_context(oxxo_title), "subtitle-label");
+    GtkWidget *oxxo_label = gtk_label_new("Se generará un folio al confirmar tu compra.");
+    gtk_box_pack_start(GTK_BOX(oxxo_box), oxxo_title, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(oxxo_box), oxxo_label, FALSE, FALSE, 0);
 
     gtk_stack_add_named(GTK_STACK(stack), paypal_box, "PayPal");
     gtk_stack_add_named(GTK_STACK(stack), card_box, "TDC/TDD");
     gtk_stack_add_named(GTK_STACK(stack), oxxo_box, "Depósito en OXXO");
-    gtk_box_pack_start(GTK_BOX(vbox), stack, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(payment_box), stack, TRUE, TRUE, 0);
 
     g_signal_connect(rb1, "toggled", G_CALLBACK(payment_radio_toggled), stack);
     g_signal_connect(rb2, "toggled", G_CALLBACK(payment_radio_toggled), stack);
@@ -904,7 +973,7 @@ static void on_checkout_submit(GtkDialog *dialog, gint response_id, gpointer use
         const char *email = gtk_entry_get_text(GTK_ENTRY(widgets[1]));
         if (strlen(email) < 5 || !strchr(email, '@'))
             { valid = FALSE; snprintf(errmsg, sizeof(errmsg), "Correo PayPal inválido."); }
-    } else if (g_strcmp0(method, "TDC/TDD") == 0) {
+    } else if (g_strcmp0(method, "Tarjeta (TDC/TDD)") == 0) {
         const char *card = gtk_entry_get_text(GTK_ENTRY(widgets[2]));
         const char *exp  = gtk_entry_get_text(GTK_ENTRY(widgets[3]));
         const char *cvv  = gtk_entry_get_text(GTK_ENTRY(widgets[4]));
@@ -933,7 +1002,9 @@ static void on_checkout_submit(GtkDialog *dialog, gint response_id, gpointer use
         return;
     }
 
-    const char *server_method = (g_strcmp0(method, "Depósito en OXXO") == 0) ? "OXXO" : method;
+    const char *server_method =
+        (g_strcmp0(method, "Depósito en OXXO") == 0) ? "OXXO" :
+        (g_strcmp0(method, "Tarjeta (TDC/TDD)") == 0 ? "TDC/TDD" : "PayPal");
 
     char cmd[256];
     snprintf(cmd, sizeof(cmd), "CHECKOUT:%s", server_method);
@@ -980,6 +1051,7 @@ static void on_checkout_submit(GtkDialog *dialog, gint response_id, gpointer use
         char *imagen = strtok_r(NULL, "|", &isp);
         if (modelo && marca && specs && precio && imagen) {
             GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+            gtk_style_context_add_class(gtk_widget_get_style_context(row_box), "ticket-row");
             GdkPixbuf *px = scale_pixbuf(imagen, 64, 64);
             GtkWidget *img = gtk_image_new_from_pixbuf(px);
             if (px) g_object_unref(px);
@@ -1016,6 +1088,7 @@ static void on_checkout_submit(GtkDialog *dialog, gint response_id, gpointer use
         snprintf(nf, sizeof(nf), "Folio de depósito: %s (preséntalo en OXXO)", folio);
 
         GtkWidget *folio_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+        gtk_style_context_add_class(gtk_widget_get_style_context(folio_hbox), "folio-row");
         GtkWidget *folio_label = gtk_label_new(nf);
         gtk_label_set_selectable(GTK_LABEL(folio_label), TRUE);
         GtkWidget *copy_btn = gtk_button_new_with_label("Copiar folio");
@@ -1040,7 +1113,6 @@ static void on_checkout_submit(GtkDialog *dialog, gint response_id, gpointer use
 static void on_copy_folio_clicked(GtkButton *button, gpointer user_data) {
     GtkWidget *folio_label = GTK_WIDGET(user_data);
     const char *folio_full = gtk_label_get_text(GTK_LABEL(folio_label));
-    /* Extraer sólo el folio (entre "Folio de depósito: " y espacio siguiente) */
     const char *start = strstr(folio_full, "OXXO-");
     const char *folio_to_copy = start ? start : folio_full;
     GtkClipboard *cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
@@ -1085,10 +1157,8 @@ static void on_save_ticket_clicked(GtkButton *button, gpointer user_data) {
             gtk_widget_destroy(chooser);
             return;
         }
-        /* CSV: Cabecera */
         fprintf(f, "Modelo,Marca,Specs,Precio,Imagen\n");
 
-        /* Parse g_last_ticket_raw (omitir primera línea OK|...) */
         char *copy = g_strdup(g_last_ticket_raw);
         char *saveptr;
         char *line = strtok_r(copy, "\n", &saveptr);
@@ -1103,7 +1173,6 @@ static void on_save_ticket_clicked(GtkButton *button, gpointer user_data) {
             char *precio = strtok_r(NULL, "|", &sp);
             char *imagen = strtok_r(NULL, "|", &sp);
             if (modelo && marca && specs && precio && imagen) {
-                /* Escapar comas (mínimo: envolver en comillas si se quisiera robusto) */
                 fprintf(f, "\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n",
                         modelo, marca, specs, precio, imagen);
             }
@@ -1262,7 +1331,7 @@ static void on_login_clicked(GtkButton *button, gpointer user_data) {
                                       "Inicia sesión como administrador para gestionar el inventario.");
     }
 
-    char *welcome_markup = g_markup_printf_escaped("<span size='xx-large'>Bienvenido, %s</span>", g_current_user);
+    char *welcome_markup = g_markup_printf_escaped("<span size='xx-large'>Bienvenido %s</span>", g_current_user);
     gtk_label_set_markup(GTK_LABEL(g_welcome_label), welcome_markup);
     g_free(welcome_markup);
 
@@ -1450,6 +1519,7 @@ static void refresh_admin_products(void) {
             GtkWidget *remove_btn = gtk_button_new_with_label("Eliminar");
             gtk_widget_set_halign(remove_btn, GTK_ALIGN_END);
             gtk_widget_set_valign(remove_btn, GTK_ALIGN_CENTER);
+            gtk_style_context_add_class(gtk_widget_get_style_context(remove_btn), "destructive-action");
             g_object_set_data_full(G_OBJECT(remove_btn), "model-name", g_strdup(modelo), g_free);
             g_signal_connect(remove_btn, "clicked", G_CALLBACK(on_admin_remove_clicked), NULL);
 
