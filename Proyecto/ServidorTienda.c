@@ -19,7 +19,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 
-#define PORT 8080
+#define PORT 5000
 #define BUFFER_SIZE 8192
 #define MAX_PRODUCTOS 100
 #define MAX_CARRITO  128
