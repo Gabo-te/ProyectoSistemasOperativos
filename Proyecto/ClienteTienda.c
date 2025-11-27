@@ -23,7 +23,7 @@
 #include <ctype.h>
 #include <time.h>
 
-#define SERVER_PORT 8080
+#define SERVER_PORT 5000
 #define BUFFER_SIZE 8192
 
 /* Globals */
