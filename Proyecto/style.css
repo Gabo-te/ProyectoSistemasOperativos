@@ -1,30 +1,175 @@
-/* style.css - Estilos básicos */
+/* style.css*/
 
+window {
+    background: #f4f6fb;
+}
+
+/* Header bar */
+headerbar {
+    background: linear-gradient(90deg, #1565c0, #1e88e5);
+    color: white;
+}
+
+headerbar label,
+headerbar button {
+    color: white;
+}
+
+/* Botones generales */
 button {
     font-weight: 500;
-}
-
-flowbox child > box {
-    background: #f7f7f7;
-    border: 1px solid #d0d0d0;
     border-radius: 6px;
-    padding: 6px;
+    padding: 6px 12px;
 }
 
-#model-card {
+button.suggested-action {
+    background: #1e88e5;
+    color: #ffffff;
+}
+
+button.destructive-action {
+    background: #c62828;
+    color: #ffffff;
+}
+
+/* Botones en la barra de título */
+.header-btn {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    border-radius: 16px;
+    padding: 4px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.header-btn:disabled {
+    background: rgba(255, 255, 255, 0.10);
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.header-cart-btn {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* Tarjetas de marca (flowbox de marcas) */
+flowbox child > button {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #d0d7e2;
+    padding: 10px;
+    box-shadow: 0 2px 6px rgba(15, 35, 52, 0.12);
+}
+
+/* Tarjetas de modelos */
+.model-card {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #d0d7e2;
+    padding: 10px;
+    box-shadow: 0 2px 8px rgba(15, 35, 52, 0.16);
+}
+
+/* Contenedor de la imagen dentro de la card */
+.model-card-image-box {
+    background: #f0f3f8;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+/* Contenido vertical de la card */
+.model-card-content {
+    /* GTK CSS no soporta flex, pero la caja vertical ya ayuda a alinear
+       y el size_request en C garantiza altura uniforme */
+}
+
+.model-card-title {
+    font-size: 11pt;
+    font-weight: 700;
+}
+
+.model-card-specs {
+    font-size: 9pt;
+    color: #455a64;
+}
+
+.model-card-price {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #2e7d32;
+}
+
+/* Listas (carrito, ticket, admin) */
+list row {
+    border-bottom: 1px solid #e0e5f2;
+    padding: 8px 4px;
     background: #ffffff;
 }
 
-list row {
-    border-bottom: 1px solid #e0e0e0;
-    padding: 4px;
+.cart-row, .ticket-row {
+    padding: 8px;
 }
 
+/* Etiquetas generales */
 label {
-    font-size: 11pt;
+    font-size: 10.5pt;
 }
 
+/* Textos de sección / títulos */
+.title-label {
+    font-size: 18pt;
+    font-weight: 700;
+    color: #1a237e;
+}
+
+.subtitle-label {
+    font-size: 12pt;
+    font-weight: 600;
+    color: #3949ab;
+}
+
+/* Errores */
 .error-text {
     color: #c62828;
     font-weight: 600;
+}
+
+/* Total del carrito y ticket */
+.total-label {
+    font-size: 13pt;
+    font-weight: 700;
+    color: #2e7d32;
+}
+
+/* Caja del ticket tipo recibo */
+.ticket-box {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px dashed #b0bec5;
+    padding: 10px;
+    box-shadow: 0 2px 6px rgba(15, 35, 52, 0.12);
+}
+
+/* Caja del formulario de pago */
+.payment-box {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #d0d7e2;
+    padding: 12px;
+}
+
+/* Campos de filtro del carrito */
+.filter-entry {
+    background: #ffffff;
+    border-radius: 6px;
+    border: 1px solid #c5cae9;
+    padding: 2px 6px;
+}
+
+/* Fila de folio OXXO */
+.folio-row {
+    background: #fffde7;
+    border-radius: 8px;
+    border: 1px solid #fdd835;
+    padding: 6px;
 }
